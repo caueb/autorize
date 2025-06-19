@@ -22,24 +22,20 @@ def makeRequest(self, messageInfo, message):
 
 def makeMessage(self, messageInfo, removeOrNot, authorizeOrNot):
     requestInfo = self._helpers.analyzeRequest(messageInfo)
-    headers = requestInfo.getHeaders()
+    headers = list(requestInfo.getHeaders())  # always copy the list
+    request_line = headers[0]  # e.g., GET /path?x=1 HTTP/1.1
+
     if removeOrNot:
-        headers = list(headers)
-        # flag for query
         queryFlag = self.replaceQueryParam.isSelected()
         if queryFlag:
             param = self.replaceString.getText().split("=")
             paramKey = param[0]
             paramValue = param[1]
-            # ([\?&])test=.*?(?=[\s&])
             pattern = r"([\?&]){}=.*?(?=[\s&])".format(paramKey)
-            patchedHeader = re.sub(pattern, r"\1{}={}".format(paramKey, paramValue), headers[0], count=1, flags=re.DOTALL)
+            patchedHeader = re.sub(pattern, r"\1{}={}".format(paramKey, paramValue), request_line, count=1, flags=re.DOTALL)
             headers[0] = patchedHeader
         else:
             removeHeaders = self.replaceString.getText()
-
-            # Headers must be entered line by line i.e. each header in a new
-            # line
             removeHeaders = [header for header in removeHeaders.split() if header.endswith(':')]
 
             for header in headers[:]:
@@ -48,35 +44,42 @@ def makeMessage(self, messageInfo, removeOrNot, authorizeOrNot):
                         headers.remove(header)
 
         if authorizeOrNot:
-            # simple string replace
-            for k, v in self.badProgrammerMRModel.items():
-                if(v["type"] == "Headers (simple string):"):
+            # Match & Replace: HEADERS
+            for v in self.badProgrammerMRModel.values():
+                if v["type"] == "Headers (simple string):":
                     headers = map(lambda h: h.replace(v["match"], v["replace"]), headers)
-                if(v["type"] == "Headers (regex):") :
+                elif v["type"] == "Headers (regex):":
                     headers = map(lambda h: re.sub(v["regexMatch"], v["replace"], h), headers)
 
-            if not queryFlag:
-                # fix missing carriage return on *NIX systems
-                replaceStringLines = self.replaceString.getText().split("\n")
-                for h in replaceStringLines:
-                    if h == "": # Logic to fix extraneous newline at the end of requests when no temporary headers are added
-                        pass
+            # Match & Replace: URL
+            for v in self.badProgrammerMRModel.values():
+                if "URL" in v["type"]:
+                    if v["regexMatch"]:
+                        request_line = re.sub(v["regexMatch"], v["replace"], request_line)
                     else:
+                        request_line = request_line.replace(v["match"], v["replace"])
+            headers[0] = request_line  # update the request line after modification
+
+            # Add temporary headers from text box (unless using query param replacement)
+            if not queryFlag:
+                for h in self.replaceString.getText().split("\n"):
+                    if h.strip() != "":
                         headers.append(h)
 
     msgBody = messageInfo.getRequest()[requestInfo.getBodyOffset():]
 
-    # apply the match/replace settings to the body of the request
+    # Match & Replace: BODY
     if authorizeOrNot and msgBody is not None:
         msgBody = self._helpers.bytesToString(msgBody)
-        # simple string replace
-        for k, v in self.badProgrammerMRModel.items():
-            if(v["type"] == "Body (simple string):") :
+        for v in self.badProgrammerMRModel.values():
+            if v["type"] == "Body (simple string):":
                 msgBody = msgBody.replace(v["match"], v["replace"])
-            if(v["type"] == "Body (regex):") :
+            elif v["type"] == "Body (regex):":
                 msgBody = re.sub(v["regexMatch"], v["replace"], msgBody)
         msgBody = self._helpers.stringToBytes(msgBody)
+
     return self._helpers.buildHttpMessage(headers, msgBody)
+
 
 def getResponseHeaders(self, requestResponse):
     analyzedResponse = self._helpers.analyzeResponse(requestResponse.getResponse())

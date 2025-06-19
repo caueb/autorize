@@ -34,9 +34,11 @@ class MatchReplace():
         column2X = column1X + labelWidth + padding
         column3X = column2X + editWidth + padding
         MRStrings = ["Headers (simple string):",
-                     "Headers (regex):",
-                     "Body (simple string):",
-                     "Body (regex):"]
+                    "Headers (regex):",
+                    "Body (simple string):",
+                    "Body (regex):",
+                    "URL (simple string):",
+                    "URL (regex):"]
         row1Y = 10
         row2Y = row1Y + labelHeight + padding
         row3Y = row2Y + editHeight + padding
